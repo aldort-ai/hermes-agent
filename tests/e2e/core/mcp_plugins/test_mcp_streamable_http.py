@@ -144,10 +144,6 @@ RECONNECT_PLANS: dict[str, tuple[list[str], int, str]] = {
     "write-capable": (["noargs_probe", "noargs_probe"], -1, "NOARGS:CANARY-crash"),
     "read-only": (["ro_probe"], 0, "RO:CANARY-crash:"),
 }
-KNOWN["test_server_crash_mid_call_fails_that_call_and_the_next_turn_reconnects[read-only]"] = (
-    r"^read-only: next turn did not reach the restarted server: .*expired while this write-capable call "
-    r"was in flight.*NOT automatically retried.*The connection has been re-established",
-    "#121042 readOnlyHint unseen under mcp 2.x, so a read-only call is not replayed after session expiry")
 
 
 def _planner(turn2: list[str]):

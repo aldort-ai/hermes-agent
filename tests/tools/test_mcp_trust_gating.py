@@ -332,3 +332,84 @@ class TestAnnotationCaptureAtDiscovery:
         assert _mcp_registration._annotation_read_only_hint(
             SimpleNamespace()
         ) is False
+
+    def test_sdk_snake_case_annotations_recognized(self):
+        """mcp 2.x models expose ``read_only_hint`` (camelCase is alias-only, #121042)."""
+        from mcp_types import ToolAnnotations
+
+        read = SimpleNamespace(annotations=ToolAnnotations(read_only_hint=True))
+        write = SimpleNamespace(annotations=ToolAnnotations(read_only_hint=False))
+        omitted = SimpleNamespace(annotations=ToolAnnotations())
+        other_fields = SimpleNamespace(annotations=ToolAnnotations(destructive_hint=True))
+        assert _mcp_registration._annotation_read_only_hint(read) is True
+        assert _mcp_registration._annotation_read_only_hint(write) is False
+        assert _mcp_registration._annotation_read_only_hint(omitted) is False
+        assert _mcp_registration._annotation_read_only_hint(other_fields) is False
+
+    def test_legacy_camelcase_object_still_recognized(self):
+        """1.x-style objects (and test stubs) keep the camelCase attribute — fallback preserved."""
+        assert _mcp_registration._annotation_read_only_hint(
+            SimpleNamespace(annotations=SimpleNamespace(readOnlyHint=True))
+        ) is True
+        assert _mcp_registration._annotation_read_only_hint(
+            SimpleNamespace(annotations=SimpleNamespace(readOnlyHint=False))
+        ) is False
+
+    def test_dict_spellings_and_disagreement_fails_closed(self):
+        """Cache dicts carry either spelling; two disagreeing spellings never promote."""
+        for key in ("read_only_hint", "readOnlyHint"):
+            assert _mcp_registration._annotation_read_only_hint(
+                SimpleNamespace(annotations={key: True})
+            ) is True
+            assert _mcp_registration._annotation_read_only_hint(
+                SimpleNamespace(annotations={key: False})
+            ) is False
+        assert _mcp_registration._annotation_read_only_hint(
+            SimpleNamespace(annotations={"read_only_hint": True, "readOnlyHint": True})
+        ) is True
+        assert _mcp_registration._annotation_read_only_hint(
+            SimpleNamespace(annotations={"read_only_hint": True, "readOnlyHint": False})
+        ) is False
+        assert _mcp_registration._annotation_read_only_hint(
+            SimpleNamespace(annotations={"read_only_hint": False, "readOnlyHint": True})
+        ) is False
+
+    def test_malformed_annotations_fail_closed(self):
+        """Garbage representations must never crash the client or gain read-only trust."""
+        for malformed in ("yes", 1, [], object(), {}, {"readOnlyHint": 1}, {"read_only_hint": "true"}):
+            assert _mcp_registration._annotation_read_only_hint(
+                SimpleNamespace(annotations=malformed)
+            ) is False, malformed
+
+    def test_discovery_to_gate_flow_with_sdk_annotations(self, fake_session):
+        """Interaction: a tool discovered with ``ToolAnnotations(read_only_hint=True)`` skips
+        approval on an untrusted server; write-capable and unannotated tools are gated."""
+        from mcp_types import ToolAnnotations
+        from tools.registry import ToolRegistry
+
+        server = mcp_tool.MCPServerTask("srv")
+        server.session = MagicMock()
+        server._tools = [
+            self._make_tool("ro_tool", ToolAnnotations(read_only_hint=True)),
+            self._make_tool("rw_tool", ToolAnnotations(read_only_hint=False)),
+            self._make_tool("bare_tool", None),
+        ]
+        config = {"trust": "untrusted", "tools": {"resources": False, "prompts": False}}
+        with patch("tools.registry.registry", ToolRegistry()), \
+             patch("tools.mcp_tool_registration._track_mcp_tool_server"):
+            _mcp_registration._register_server_tools("srv", server, config)
+
+        assert mcp_tool._tool_read_only_hints["srv"] == {
+            "ro_tool": True, "rw_tool": False, "bare_tool": False,
+        }
+
+        with patch("tools.approval_prompt.request_elicitation_consent",
+                   return_value="decline") as consent:
+            ro = _mcp_handlers._make_tool_handler("srv", "ro_tool", 30.0)({})
+            rw = _mcp_handlers._make_tool_handler("srv", "rw_tool", 30.0)({})
+            bare = _mcp_handlers._make_tool_handler("srv", "bare_tool", 30.0)({})
+        assert json.loads(ro) == {"result": "ok"}
+        assert consent.call_count == 2
+        assert "error" in json.loads(rw)
+        assert "error" in json.loads(bare)
+        fake_session.call_tool.assert_awaited_once()

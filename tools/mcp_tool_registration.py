@@ -46,10 +46,20 @@ def _normalize_server_trust(value: Any) -> str:
 
 
 def _annotation_read_only_hint(mcp_tool: Any) -> bool:
-    """True only when annotations (SDK object or cache dict) carry ``readOnlyHint is True``; unknown = write-capable."""
+    """True only when annotations (SDK object or cache dict) carry ``readOnlyHint is True``; unknown = write-capable.
+
+    mcp 2.x renamed the model field to ``read_only_hint`` and left camelCase as a serialization
+    alias only (attribute access raises), so reading the old spelling classified every tool
+    write-capable on 2.x (#121042). Objects go through :func:`mcp_field` like ``input_schema``
+    (snake first, camel for 1.x/stub objects); the dict form accepts either key, and two
+    disagreeing spellings fail closed."""
     annotations = getattr(mcp_tool, "annotations", None)
-    hint = annotations.get("readOnlyHint") if isinstance(annotations, dict) else getattr(annotations, "readOnlyHint", None)
-    return hint is True
+    if annotations is None:
+        return False
+    if isinstance(annotations, dict):
+        values = [annotations[key] for key in ("read_only_hint", "readOnlyHint") if key in annotations]
+        return bool(values) and all(value is True for value in values)
+    return mcp_field(annotations, "read_only_hint", "readOnlyHint") is True
 
 
 def _record_tool_trust_metadata(server_name: str, config: dict, tools: List[Any], key=None) -> None:
