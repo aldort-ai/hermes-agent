@@ -38,8 +38,8 @@ jobs:
           prune-python-cache: true
       - name: Record tested commit
         run: git rev-parse HEAD
-      - name: Trust-gating suite (incl. the five #121042 regression tests)
-        run: scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -q
+      - name: Trust-gating suite (five new regression tests included, verbose)
+        run: scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -v
       - name: Related regression set (7 files)
         run: scripts/run_tests.sh -q tests/tools/test_mcp_schema_cache.py tests/tools/test_mcp_schema_cache_ttl.py tests/tools/test_mcp_lazy_start.py tests/tools/test_mcp_dynamic_discovery.py tests/tools/test_mcp_multiplex_connection_keys.py tests/tools/test_mcp_tool_session_expired.py tests/tools/test_mcp_config_change_rebind.py
 
@@ -94,8 +94,8 @@ jobs:
           rg --version
       - name: Record tested commit
         run: git rev-parse HEAD
-      - name: Run the two marker-bearing e2e files
-        run: scripts/run_tests.sh --include-integration tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py
+      - name: Run the two marker-bearing e2e files (verbose, per-test names)
+        run: scripts/run_tests.sh --include-integration tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py -v
         env:
           HERMES_TEST_WORKERS: "2"
           HERMES_TEST_FILE_TIMEOUT: "1200"
