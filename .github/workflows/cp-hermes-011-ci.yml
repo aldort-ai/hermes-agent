@@ -1,0 +1,26 @@
+# CP-HERMES-011 CI run-availability probe — ISOLATED BRANCH ONLY.
+# Purpose: determine empirically whether GitHub Actions workflows run on this
+# fork at all (the fork reports 0 registered workflows / 0 runs). No secrets,
+# contents:read only, no deployment or write permissions.
+name: CP-HERMES-011 CI probe
+
+on:
+  push:
+    branches: ["cp-hermes-011/ci-test"]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Probe
+        run: |
+          set -euo pipefail
+          echo "CP-HERMES-011 probe OK"
+          echo "head=$(git rev-parse HEAD)"
+          python3 --version
