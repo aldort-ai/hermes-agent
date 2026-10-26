@@ -1,8 +1,14 @@
-# CP-HERMES-011 CI run-availability probe — ISOLATED BRANCH ONLY.
-# Purpose: determine empirically whether GitHub Actions workflows run on this
-# fork at all (the fork reports 0 registered workflows / 0 runs). No secrets,
-# contents:read only, no deployment or write permissions.
-name: CP-HERMES-011 CI probe
+# CP-HERMES-011 CI evidence lanes — ISOLATED BRANCH ONLY (cp-hermes-011/ci-test).
+#
+# Minimal reproduction of the repository's canonical test lanes on standard
+# GitHub-hosted runners, for the exact fix commit d9370ad908. The fork cannot
+# use upstream's larger-runner labels (ubuntu-latest-96-core / -32-core), so
+# tests.yml's own jobs cannot run here; these jobs replicate its shapes with
+# the repo's own setup-pm composite.
+#
+# Boundaries: contents:read only; no secrets; no deployment; no write
+# permissions; no upstream contact; runs only on the isolated ci-test branch.
+name: CP-HERMES-011 CI evidence
 
 on:
   push:
@@ -11,16 +17,86 @@ on:
 permissions:
   contents: read
 
+env:
+  OPENROUTER_API_KEY: ""
+  OPENAI_API_KEY: ""
+  NOUS_API_KEY: ""
+
 jobs:
-  probe:
+  focused:
+    name: Focused trust-gating + regression
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Probe
+      - name: Set up locked Python and test dependencies
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all"]'
+          test-environment: 'true'
+          prune-python-cache: true
+      - name: Record tested commit
+        run: git rev-parse HEAD
+      - name: Trust-gating suite (incl. the five #121042 regression tests)
+        run: scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -q
+      - name: Related regression set (7 files)
+        run: scripts/run_tests.sh -q tests/tools/test_mcp_schema_cache.py tests/tools/test_mcp_schema_cache_ttl.py tests/tools/test_mcp_lazy_start.py tests/tools/test_mcp_dynamic_discovery.py tests/tools/test_mcp_multiplex_connection_keys.py tests/tools/test_mcp_tool_session_expired.py tests/tools/test_mcp_config_change_rebind.py
+
+  family:
+    name: MCP family (86 files, device-flow included)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up locked Python and test dependencies
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all"]'
+          test-environment: 'true'
+          prune-python-cache: true
+      - name: Record tested commit
+        run: git rev-parse HEAD
+      - name: Run the MCP family
+        run: scripts/run_tests.sh tests/tools/test_mcp_*.py -q
+        env:
+          HERMES_TEST_WORKERS: "4"
+          HERMES_TEST_FILE_TIMEOUT: "1200"
+          HERMES_TEST_FILE_RETRIES: "0"
+
+  e2e-markers:
+    name: E2E lanes for the two dropped #121042 markers
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up locked Python, Node and test dependencies
+        uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '["all"]'
+          test-environment: 'true'
+          prune-python-cache: true
+      - name: Install ripgrep (prebuilt binary)
         run: |
           set -euo pipefail
-          echo "CP-HERMES-011 probe OK"
-          echo "head=$(git rev-parse HEAD)"
-          python3 --version
+          RG_VERSION=15.1.0
+          RG_SHA256=1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599
+          RG_TARBALL=ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz
+          curl -sSfL --retry 3 --retry-delay 5 -o "$RG_TARBALL" \
+            "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/${RG_TARBALL}"
+          echo "${RG_SHA256}  ${RG_TARBALL}" | sha256sum -c -
+          tar -xzf "$RG_TARBALL"
+          sudo mv "ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl/rg" /usr/local/bin/rg
+          rm -rf "$RG_TARBALL" "ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl"
+          rg --version
+      - name: Record tested commit
+        run: git rev-parse HEAD
+      - name: Run the two marker-bearing e2e files
+        run: scripts/run_tests.sh --include-integration tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py
+        env:
+          HERMES_TEST_WORKERS: "2"
+          HERMES_TEST_FILE_TIMEOUT: "1200"
+          HERMES_TEST_FILE_RETRIES: "0"
