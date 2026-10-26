@@ -38,8 +38,8 @@ jobs:
           prune-python-cache: true
       - name: Record tested commit
         run: git rev-parse HEAD
-      - name: Trust-gating suite (five new regression tests included, verbose)
-        run: scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -v
+      - name: Trust-gating suite (all 20; five new regression tests included)
+        run: scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -q
       - name: Related regression set (7 files)
         run: scripts/run_tests.sh -q tests/tools/test_mcp_schema_cache.py tests/tools/test_mcp_schema_cache_ttl.py tests/tools/test_mcp_lazy_start.py tests/tools/test_mcp_dynamic_discovery.py tests/tools/test_mcp_multiplex_connection_keys.py tests/tools/test_mcp_tool_session_expired.py tests/tools/test_mcp_config_change_rebind.py
 
@@ -66,7 +66,7 @@ jobs:
           HERMES_TEST_FILE_RETRIES: "0"
 
   e2e-markers:
-    name: E2E lanes for the two dropped #121042 markers
+    name: E2E marker files via the canonical runner
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -94,9 +94,30 @@ jobs:
           rg --version
       - name: Record tested commit
         run: git rev-parse HEAD
-      - name: Run the two marker-bearing e2e files (verbose, per-test names)
-        run: scripts/run_tests.sh --include-integration tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py -v
+      - name: Run the two marker-bearing e2e files
+        run: scripts/run_tests.sh --include-integration tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py
         env:
           HERMES_TEST_WORKERS: "2"
           HERMES_TEST_FILE_TIMEOUT: "1200"
           HERMES_TEST_FILE_RETRIES: "0"
+
+  confirm-names:
+    name: Per-test-name confirmation (direct pytest, verbose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up locked Python, Node and test dependencies
+        uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '["all"]'
+          test-environment: 'true'
+          prune-python-cache: true
+      - name: Record tested commit
+        run: git rev-parse HEAD
+      - name: Trust-gating suite, per-test verdicts (the five new tests included)
+        run: '"$HERMES_PYTHON" -m pytest tests/tools/test_mcp_trust_gating.py -v --no-header'
+      - name: The two marker-bearing e2e files, per-test verdicts
+        run: '"$HERMES_PYTHON" -m pytest tests/e2e/core/mcp_plugins/test_mcp_stdio_conformance.py tests/e2e/core/mcp_plugins/test_mcp_streamable_http.py -v --no-header'
